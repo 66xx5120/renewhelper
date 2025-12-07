@@ -155,7 +155,7 @@
   - **自动禁用**：到期超过指定天数未处理，自动标记为禁用。
 
 <div align="center">
-  <img src="./assets/addUI_darkCN_shot.png" alt="RenewHelper 界面预览" width="600">
+  <img src="./assets/AddUI_darkCN_shot.png" alt="RenewHelper 界面预览" width="600">
 </div>
 
 ### 查看日志
