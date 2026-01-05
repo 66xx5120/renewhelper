@@ -13,9 +13,12 @@
  * modified: add gotify/ntfy channels and refactor setup page v1.4.2
  * modified: fix previewDate logic v1.4.3
  * added: add billing management v2.0.0
+ * modified: fix manual renew v2.0.1
+ * added: add manual renew history v2.0.2
+ * modified: fix renewDialogVisible logic v2.0.3
  */
 
-const APP_VERSION = "v2.0.0";
+const APP_VERSION = "v2.0.3";
 
 // ==========================================
 // 1. Core Logic (Lunar & Calc)
@@ -2290,10 +2293,29 @@ const HTML = `<!DOCTYPE html>
                     <el-date-picker v-model="renewForm.renewDate" type="datetime" value-format="YYYY-MM-DD HH:mm:ss" style="width:100%" class="!w-full"></el-date-picker>
                  </el-form-item>
                  <el-form-item :label="t('billPeriod')">
+                     <template #label>
+                        {{t('billPeriod')}}
+                        <div class="inline-flex items-center gap-1 ml-2 align-middle">
+                            <span v-if="currentRenewItem.intervalDays" class="text-[9px] font-bold text-slate-500 bg-slate-50 border border-slate-200 px-1 py-[2px] leading-none whitespace-nowrap uppercase">
+                                {{ currentRenewItem.intervalDays }} {{ t('unit.' + (currentRenewItem.cycleUnit || 'day')) }}
+                            </span>
+                            <span v-if="currentRenewItem.useLunar" class="text-[9px] font-bold text-purple-600 bg-purple-50 border border-purple-200 px-1 py-[2px] leading-none whitespace-nowrap">
+                                {{ t('lunarCal') }}
+                            </span>
+                        </div>
+                     </template>
                      <div class="flex items-center gap-4">
-                         <div class="flex-1 min-w-0"><el-date-picker v-model="renewForm.startDate" type="date" value-format="YYYY-MM-DD" :placeholder="t('startDate')" style="width:100%" :clearable="false"></el-date-picker></div>
+                         <div class="flex-1 min-w-0">
+                             <el-date-picker v-if="currentRenewItem.useLunar" v-model="renewForm.startDate" type="date" value-format="YYYY-MM-DD" :placeholder="t('startDate')" style="width:100%" :clearable="false" popper-class="lunar-popper" :disabled="renewMode === 'renew' && currentRenewItem.type === 'cycle'"><template #default="c"><div class="lunar-cell"><el-tooltip :content="getLunarTooltip(c)" placement="top" :hide-after="0" :enterable="false"><div class="view-date"><span class="solar font-bold">{{c.text}}</span><span class="lunar">{{getSmartLunarText(c)}}</span></div></el-tooltip><div class="view-month">{{getMonthStr(c.text)}}</div><div class="view-year"><span class="y-num">{{c.text}}</span><span class="y-ganzhi">{{getYearGanZhi(c.text)}}</span></div></div></template></el-date-picker>
+                             <el-date-picker v-else v-model="renewForm.startDate" type="date" value-format="YYYY-MM-DD" :placeholder="t('startDate')" style="width:100%" :clearable="false" popper-class="lunar-popper" :disabled="renewMode === 'renew' && currentRenewItem.type === 'cycle'"><template #default="c"><div class="lunar-cell"><div class="view-date"><span class="solar font-bold">{{c.text}}</span></div><div class="view-month">{{getMonthStr(c.text)}}</div><div class="view-year"><span class="y-num">{{c.text}}</span></div></div></template></el-date-picker>
+                             <div v-if="currentRenewItem.useLunar" class="text-xs text-purple-600 mt-1 font-mono">{{ getLunarStr(renewForm.startDate) }}</div>
+                         </div>
                          <span class="text-gray-400 flex-shrink-0">-</span>
-                         <div class="flex-1 min-w-0"><el-date-picker v-model="renewForm.endDate" type="date" value-format="YYYY-MM-DD" :placeholder="t('endDate')" style="width:100%" :clearable="false"></el-date-picker></div>
+                         <div class="flex-1 min-w-0">
+                             <el-date-picker v-if="currentRenewItem.useLunar" v-model="renewForm.endDate" type="date" value-format="YYYY-MM-DD" :placeholder="t('endDate')" style="width:100%" :clearable="false" popper-class="lunar-popper" :disabled="renewMode === 'renew' && currentRenewItem.type === 'cycle'"><template #default="c"><div class="lunar-cell"><el-tooltip :content="getLunarTooltip(c)" placement="top" :hide-after="0" :enterable="false"><div class="view-date"><span class="solar font-bold">{{c.text}}</span><span class="lunar">{{getSmartLunarText(c)}}</span></div></el-tooltip><div class="view-month">{{getMonthStr(c.text)}}</div><div class="view-year"><span class="y-num">{{c.text}}</span><span class="y-ganzhi">{{getYearGanZhi(c.text)}}</span></div></div></template></el-date-picker>
+                             <el-date-picker v-else v-model="renewForm.endDate" type="date" value-format="YYYY-MM-DD" :placeholder="t('endDate')" style="width:100%" :clearable="false" popper-class="lunar-popper" :disabled="renewMode === 'renew' && currentRenewItem.type === 'cycle'"><template #default="c"><div class="lunar-cell"><div class="view-date"><span class="solar font-bold">{{c.text}}</span></div><div class="view-month">{{getMonthStr(c.text)}}</div><div class="view-year"><span class="y-num">{{c.text}}</span></div></div></template></el-date-picker>
+                             <div v-if="currentRenewItem.useLunar" class="text-xs text-purple-600 mt-1 font-mono">{{ getLunarStr(renewForm.endDate) }}</div>
+                         </div>
                      </div>
                  </el-form-item>
                  <div class="grid grid-cols-2 gap-4">
@@ -2312,7 +2334,7 @@ const HTML = `<!DOCTYPE html>
                </el-form>
                <template #footer>
                   <el-button @click="renewDialogVisible=false">{{t('cancel')}}</el-button>
-                  <el-button type="primary" @click="submitRenew">{{t('yes')}}</el-button>
+                  <el-button type="primary" @click="submitRenew" :loading="submitting">{{t('yes')}}</el-button>
                </template>
             </el-dialog>
 
@@ -2350,9 +2372,9 @@ const HTML = `<!DOCTYPE html>
                                             <span class="font-mono text-base font-bold text-slate-700 dark:text-slate-200 tracking-tight">
                                                 {{ item.renewDate ? item.renewDate.substring(0, 16) : 'N/A' }}
                                             </span>
-                                            <span v-if="index===0" class="text-[9px] bg-blue-100 text-blue-600 px-1.5 py-0.5 rounded-sm font-bold">LATEST</span>
-                                            <span v-if="item.note && (item.note.includes('Auto') || item.note.includes('自动'))" class="text-[9px] bg-purple-100 text-purple-600 px-1.5 py-0.5 rounded-sm font-bold">AUTO</span>
-                                            <span v-else class="text-[9px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded-sm font-bold">MANUAL</span>
+                                            <span v-if="index===0 && historyPage===1" class="text-[9px] bg-blue-100 text-blue-600 px-1.5 py-0.5 rounded-sm font-bold">{{ t('tagLatest') }}</span>
+                                            <span v-if="item.note && (item.note.includes('Auto') || item.note.includes('自动'))" class="text-[9px] bg-purple-100 text-purple-600 px-1.5 py-0.5 rounded-sm font-bold">{{ t('tagAuto') }}</span>
+                                            <span v-else class="text-[9px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded-sm font-bold">{{ t('tagManual') }}</span>
                                         </div>
                                         <div class="flex gap-1">
                                             <el-button type="primary" link size="small" @click="startEditHistory(index, item)" :icon="Edit"></el-button>
@@ -2373,7 +2395,7 @@ const HTML = `<!DOCTYPE html>
                                     </div>
 
                                     <div class="flex items-start gap-3" v-if="item.note && !item.note.includes('Auto')">
-                                        <div class="text-xs text-gray-500 dark:text-gray-400 font-mono italic mt-0.5 break-all">
+                                        <div class="text-xs text-gray-500 dark:text-gray-400 font-mono mt-0.5 break-all">
                                             📝 {{ item.note }}
                                         </div>
                                     </div>
@@ -2507,7 +2529,7 @@ const HTML = `<!DOCTYPE html>
             lblTopic: '主题 (Topic)',readOnly: '只读',
             lblNotifyTime: '提醒时间', btnResetToken: '重置令牌',
             lblHeaders: '请求头 (JSON)', lblBody: '消息体 (JSON)',
-            tag:{alert:'触发提醒',renew:'自动续期',disable:'自动禁用',normal:'检查正常'},msg:{confirmRenew: '确认将 [%s] 的更新日期设置为今天吗？',renewSuccess: '续期成功！日期已更新: %s -> %t',tokenReset: '令牌已重置，请更新订阅地址', copyOk: '链接已复制', exportSuccess: '备份已下载',importSuccess: '数据恢复成功，即将刷新',importFail: '导入失败，请检查文件格式',passReq:'请输入密码',saved:'保存成功',saveFail:'保存失败',cleared:'已清空',clearFail:'清空失败',loginFail:'验证失败',loadLogFail:'日志加载失败',confirmDel:'确认删除此项目?',dateError:'上次更新日期不能早于创建日期',nameReq:'服务名称不能为空',nameExist:'服务名称已存在',futureError:'上次续期不能是未来时间',serviceDisabled:'服务已停用',serviceEnabled:'服务已启用',execFinish: '执行完毕!'},tags:'标签',tagPlaceholder:'输入标签回车创建',searchPlaceholder:'搜索标题或备注...',tagsCol:'标签',tagAll:'全部',useLunar:'农历周期',lunarTip:'按农历日期计算周期',yes:'是',no:'否',timezone:'偏好时区',disabledFilter:'已停用',policyConfig:'自动化策略',policyNotify:'提醒提前期',policyAuto:'自动续期',policyRenewDay:'过期续期天数',useGlobal:'全局默认',autoRenewOnDesc:'过期自动续期',autoRenewOffDesc:'过期自动禁用',previewCalc:'根据上次续期日期和周期计算',nextDue:'下次到期',
+            tag:{alert:'触发提醒',renew:'自动续期',disable:'自动禁用',normal:'检查正常'},tagLatest:'最新',tagAuto:'自动',tagManual:'手动',msg:{confirmRenew: '确认将 [%s] 的更新日期设置为今天吗？',renewSuccess: '续期成功！日期已更新: %s -> %t',tokenReset: '令牌已重置，请更新订阅地址', copyOk: '链接已复制', exportSuccess: '备份已下载',importSuccess: '数据恢复成功，即将刷新',importFail: '导入失败，请检查文件格式',passReq:'请输入密码',saved:'保存成功',saveFail:'保存失败',cleared:'已清空',clearFail:'清空失败',loginFail:'验证失败',loadLogFail:'日志加载失败',confirmDel:'确认删除此项目?',dateError:'上次更新日期不能早于创建日期',nameReq:'服务名称不能为空',nameExist:'服务名称已存在',futureError:'上次续期不能是未来时间',serviceDisabled:'服务已停用',serviceEnabled:'服务已启用',execFinish: '执行完毕!'},tags:'标签',tagPlaceholder:'输入标签回车创建',searchPlaceholder:'搜索标题或备注...',tagsCol:'标签',tagAll:'全部',useLunar:'农历周期',lunarTip:'按农历日期计算周期',yes:'是',no:'否',timezone:'偏好时区',disabledFilter:'已停用',policyConfig:'自动化策略',policyNotify:'提醒提前期',policyAuto:'自动续期',policyRenewDay:'过期续期天数',useGlobal:'全局默认',autoRenewOnDesc:'过期自动续期',autoRenewOffDesc:'过期自动禁用',previewCalc:'根据上次续期日期和周期计算',nextDue:'下次到期',
             fixedPrice:'账单金额',currency:'币种',defaultCurrency:'默认币种',history:'历史记录',historyTitle:'续费历史',totalCost:'总花费',totalCount:'续费次数',renewDate:'操作日期',billPeriod:'账单周期',startDate:'开始日期',endDate:'结束日期',actualPrice:'实付金额',notePlaceholder:'可选备注...',btnAddHist:'补录历史',modify:'修改',confirmDelHist:'删除此记录?',opDate:'操作日',amount:'金额',period:'周期'},
             en: { filter:{expired:'Overdue/Today', w7:'Within 7 Days', w30:'Within 30 Days', future:'Future(>30d)', new:'New (<30d)', stable:'Stable (1m-1y)', long:'Long Term (>1y)', m1:'Last Month', m6:'Last 6 Months', year:'This Year', earlier:'Earlier'}, secPref: 'PREFERENCES',manualRenew: 'Quick Renew',tipToggle: 'Toggle Status',tipRenew: 'Quick Renew',tipEdit: 'Edit Service',tipDelete: 'Delete Service',secNotify: 'NOTIFICATIONS',secData: 'DATA MANAGEMENT',lblIcsTitle: 'CALENDAR SUBSCRIPTION',lblIcsUrl: 'ICS URL (iOS/Google Calendar)',btnCopy: 'COPY',btnResetToken: 'RESET TOKEN',loginTitle:'SYSTEM ACCESS',passwordPlaceholder:'Authorization Key',unlockBtn:'UNLOCK TERMINAL',check:'CHECK',add:'ADD NEW',settings:'CONFIG',logs:'LOGS',logout:'LOGOUT',totalServices:'TOTAL SERVICES',expiringSoon:'EXPIRING SOON',expiredAlert:'EXPIRED / ALERT',serviceName:'SERVICE NAME',type:'TYPE',nextDue:'NEXT DUE',uptime:'UPTIME',lastRenew:'LAST RENEW',cyclePeriod:'CYCLE',actions:'ACTIONS',cycle:'CYCLE',reset:'RESET',disabled:'DISABLED',days:'DAYS',daysUnit:'DAYS',typeReset:'RESET',typeCycle:'CYCLE',lunarCal:'Lunar',lbOffline:'OFFLINE',unit:{day:'DAY',month:'MTH',year:'YR'},editService:'EDIT SERVICE',newService:'NEW SERVICE',formName:'NAME',namePlaceholder:'e.g. Netflix',formType:'MODE',createDate:'CREATE DATE',interval:'INTERVAL',note:'NOTE',status:'STATUS',active:'ACTIVE',disabledText:'DISABLED',cancel:'CANCEL',save:'SAVE DATA',saveSettings:'SAVE CONFIG',settingsTitle:'SYSTEM CONFIG',setNotify:'NOTIFICATION',pushSwitch:'MASTER PUSH',pushUrl:'WEBHOOK URL',notifyThreshold:'ALERT THRESHOLD',setAuto:'AUTOMATION',autoRenewSwitch:'AUTO RENEW',autoRenewThreshold:'RENEW AFTER',autoDisableThreshold:'DISABLE AFTER',daysOverdue:'DAYS OVERDUE',sysLogs:'SYSTEM LOGS',execLogs:'EXECUTION LOGS',clearHistory:'CLEAR HISTORY',noLogs:'NO DATA',liveLog:'LIVE TERMINAL',btnExport: 'Export Data',btnImport: 'Import Data',btnTest: 'Send Test',btnRefresh:'REFRESH',
             lblEnable: 'Enable', lblToken: 'Token', lblApiKey: 'API Key', lblChatId: 'Chat ID', 
@@ -2515,16 +2537,50 @@ const HTML = `<!DOCTYPE html>
             lblTopic: 'Topic',readOnly: 'Read-only',
             lblNotifyTime: 'Alarm Time', btnResetToken: 'RESET TOKEN',
             lblHeaders: 'Headers (JSON)', lblBody: 'Body (JSON)',
-            tag:{alert:'ALERT',renew:'RENEWED',disable:'DISABLED',normal:'NORMAL'},msg:{confirmRenew: 'Renew [%s] to today based on your timezone?',renewSuccess: 'Renewed! Date updated: %s -> %t',tokenReset: 'Token Reset. Update your calendar apps.', copyOk: 'Link Copied', exportSuccess: 'Backup Downloaded',importSuccess: 'Restore Success, Refreshing...',importFail: 'Import Failed, Check File Format',passReq:'Password Required',saved:'Data Saved',saveFail:'Save Failed',cleared:'Cleared',clearFail:'Clear Failed',loginFail:'Access Denied',loadLogFail:'Load Failed',confirmDel:'Confirm Delete?',dateError:'Last renew date cannot be earlier than create date',nameReq:'Name Required',nameExist:'Name already exists',futureError:'Renew date cannot be in the future',serviceDisabled:'Service Disabled',serviceEnabled:'Service Enabled',execFinish: 'EXECUTION FINISHED!'},tags:'TAGS',tagPlaceholder:'Press Enter to create tag',searchPlaceholder:'Search...',tagsCol:'TAGS',tagAll:'ALL',useLunar:'Lunar Cycle',lunarTip:'Calculate based on Lunar calendar',yes:'Yes',no:'No',timezone:'Timezone',disabledFilter:'DISABLED',policyConfig:'Policy Config',policyNotify:'Notify Days',policyAuto:'Auto Renew',policyRenewDay:'Renew Days',useGlobal:'Global Default',autoRenewOnDesc:'Auto Renew when overdue',autoRenewOffDesc:'Auto Disable when overdue',previewCalc:'Based on Last Renew Date & Interval',nextDue:'NEXT DUE',
+            tag:{alert:'ALERT',renew:'RENEWED',disable:'DISABLED',normal:'NORMAL'},tagLatest:'LATEST',tagAuto:'AUTO',tagManual:'MANUAL',msg:{confirmRenew: 'Renew [%s] to today based on your timezone?',renewSuccess: 'Renewed! Date updated: %s -> %t',tokenReset: 'Token Reset. Update your calendar apps.', copyOk: 'Link Copied', exportSuccess: 'Backup Downloaded',importSuccess: 'Restore Success, Refreshing...',importFail: 'Import Failed, Check File Format',passReq:'Password Required',saved:'Data Saved',saveFail:'Save Failed',cleared:'Cleared',clearFail:'Clear Failed',loginFail:'Access Denied',loadLogFail:'Load Failed',confirmDel:'Confirm Delete?',dateError:'Last renew date cannot be earlier than create date',nameReq:'Name Required',nameExist:'Name already exists',futureError:'Renew date cannot be in the future',serviceDisabled:'Service Disabled',serviceEnabled:'Service Enabled',execFinish: 'EXECUTION FINISHED!'},tags:'TAGS',tagPlaceholder:'Press Enter to create tag',searchPlaceholder:'Search...',tagsCol:'TAGS',tagAll:'ALL',useLunar:'Lunar Cycle',lunarTip:'Calculate based on Lunar calendar',yes:'Yes',no:'No',timezone:'Timezone',disabledFilter:'DISABLED',policyConfig:'Policy Config',policyNotify:'Notify Days',policyAuto:'Auto Renew',policyRenewDay:'Renew Days',useGlobal:'Global Default',autoRenewOnDesc:'Auto Renew when overdue',autoRenewOffDesc:'Auto Disable when overdue',previewCalc:'Based on Last Renew Date & Interval',nextDue:'NEXT DUE',
             fixedPrice:'Default Price',currency:'Currency',defaultCurrency:'Default Currency',history:'History',historyTitle:'Renewal History',totalCost:'Total Cost',totalCount:'Total Count',renewDate:'Op Date',billPeriod:'Bill Period',startDate:'Start Date',endDate:'End Date',actualPrice:'Actual Price',notePlaceholder:'Optional note...',btnAddHist:'Add Record',modify:'Edit',confirmDelHist:'Delete record?',opDate:'Op Date',amount:'Amount',period:'Period'}
         };
         const LUNAR={info:[0x04bd8,0x04ae0,0x0a570,0x054d5,0x0d260,0x0d950,0x16554,0x056a0,0x09ad0,0x055d2,0x04ae0,0x0a5b6,0x0a4d0,0x0d250,0x1d255,0x0b540,0x0d6a0,0x0ada2,0x095b0,0x14977,0x04970,0x0a4b0,0x0b4b5,0x06a50,0x06d40,0x1ab54,0x02b60,0x09570,0x052f2,0x04970,0x06566,0x0d4a0,0x0ea50,0x06e95,0x05ad0,0x02b60,0x186e3,0x092e0,0x1c8d7,0x0c950,0x0d4a0,0x1d8a6,0x0b550,0x056a0,0x1a5b4,0x025d0,0x092d0,0x0d2b2,0x0a950,0x0b557,0x06ca0,0x0b550,0x15355,0x04da0,0x0a5b0,0x14573,0x052b0,0x0a9a8,0x0e950,0x06aa0,0x0aea6,0x0ab50,0x04b60,0x0aae4,0x0a570,0x05260,0x0f263,0x0d950,0x05b57,0x056a0,0x096d0,0x04dd5,0x04ad0,0x0a4d0,0x0d4d4,0x0d250,0x0d558,0x0b540,0x0b6a0,0x195a6,0x095b0,0x049b0,0x0a974,0x0a4b0,0x0b27a,0x06a50,0x06d40,0x0af46,0x0ab60,0x09570,0x04af5,0x04970,0x064b0,0x074a3,0x0ea50,0x06b58,0x055c0,0x0ab60,0x096d5,0x092e0,0x0c960,0x0d954,0x0d4a0,0x0da50,0x07552,0x056a0,0x0abb7,0x025d0,0x092d0,0x0cab5,0x0a950,0x0b4a0,0x0baa4,0x0ad50,0x055d9,0x04ba0,0x0a5b0,0x15176,0x052b0,0x0a930,0x07954,0x06aa0,0x0ad50,0x05b52,0x04b60,0x0a6e6,0x0a4e0,0x0d260,0x0ea65,0x0d530,0x05aa0,0x076a3,0x096d0,0x04bd7,0x04ad0,0x0a4d0,0x1d0b6,0x0d250,0x0d520,0x0dd45,0x0b5a0,0x056d0,0x055b2,0x049b0,0x0a577,0x0a4b0,0x0aa50,0x1b255,0x06d20,0x0ada0,0x14b63,0x09370,0x049f8,0x04970,0x064b0,0x168a6,0x0ea50,0x06b20,0x1a6c4,0x0aae0,0x0a2e0,0x0d2e3,0x0c960,0x0d557,0x0d4a0,0x0da50,0x05d55,0x056a0,0x0a6d0,0x055d4,0x052d0,0x0a9b8,0x0a950,0x0b4a0,0x0b6a6,0x0ad50,0x055a0,0x0aba4,0x0a5b0,0x052b0,0x0b273,0x06930,0x07337,0x06aa0,0x0ad50,0x14b55,0x04b60,0x0a570,0x054e4,0x0d160,0x0e968,0x0d520,0x0daa0,0x16aa6,0x056d0,0x04ae0,0x0a9d4,0x0a2d0,0x0d150,0x0f252,0x0d520],gan:'甲乙丙丁戊己庚辛壬癸'.split(''),zhi:'子丑寅卯辰巳午未申酉戌亥'.split(''),months:'正二三四五六七八九十冬腊'.split(''),days:'初一,初二,初三,初四,初五,初六,初七,初八,初九,初十,十一,十二,十三,十四,十五,十六,十七,十八,十九,二十,廿一,廿二,廿三,廿四,廿五,廿六,廿七,廿八,廿九,三十'.split(','),lYearDays(y){let s=348;for(let i=0x8000;i>0x8;i>>=1)s+=(this.info[y-1900]&i)?1:0;return s+this.leapDays(y)},leapDays(y){if(this.leapMonth(y))return(this.info[y-1900]&0x10000)?30:29;return 0},leapMonth(y){return this.info[y-1900]&0xf},monthDays(y,m){return(this.info[y-1900]&(0x10000>>m))?30:29},solar2lunar(y,m,d){if(y<1900||y>2100)return null;const base=new Date(1900,0,31),obj=new Date(y,m-1,d);let offset=Math.round((obj-base)/86400000);let ly=1900,temp=0;for(;ly<2101&&offset>0;ly++){temp=this.lYearDays(ly);offset-=temp}if(offset<0){offset+=temp;ly--}let lm=1,leap=this.leapMonth(ly),isLeap=false;for(;lm<13&&offset>0;lm++){if(leap>0&&lm===(leap+1)&&!isLeap){--lm;isLeap=true;temp=this.leapDays(ly)}else{temp=this.monthDays(ly,lm)}if(isLeap&&lm===(leap+1))isLeap=false;offset-=temp}if(offset===0&&leap>0&&lm===leap+1){if(isLeap)isLeap=false;else{isLeap=true;--lm}}if(offset<0){offset+=temp;--lm}const ld=offset+1,gIdx=(ly-4)%10,zIdx=(ly-4)%12;const yStr=this.gan[gIdx<0?gIdx+10:gIdx]+this.zhi[zIdx<0?zIdx+12:zIdx];const mStr=(isLeap?'闰':'')+this.months[lm-1]+'月';return{year:ly,month:lm,day:ld,isLeap,yearStr:yStr,monthStr:mStr,dayStr:this.days[ld-1],fullStr:yStr+'年'+mStr+this.days[ld-1]}}};
         
+
         // 本地时间解析函数，防止时区偏差
         const parseYMD = (s) => { 
             if(!s) return new Date(); 
             const p = s.split('-'); 
             return new Date(p[0], p[1]-1, p[2]); 
+        };
+
+        // Date calculation logic shared between validation and auto-fill
+        const calculateCycleEndDate = (startDateStr, item) => {
+            if (!startDateStr || !item || !item.intervalDays) return null;
+            
+            try {
+                if (item.useLunar && typeof frontendCalc !== 'undefined' && frontendCalc.addPeriod) {
+                    const p = startDateStr.split('-');
+                    const y = parseInt(p[0]), m = parseInt(p[1]), d = parseInt(p[2]);
+                    const l = LUNAR.solar2lunar(y, m, d);
+                    if (l) {
+                        const nl = frontendCalc.addPeriod({ year: l.year, month: l.month, day: l.day, isLeap: l.isLeap }, parseInt(item.intervalDays), item.cycleUnit || 'day');
+                        const ns = frontendCalc.l2s(nl);
+                        const nextDateUTC = new Date(Date.UTC(ns.year, ns.month - 1, ns.day));
+                        return nextDateUTC.toISOString().split('T')[0];
+                    }
+                } else {
+                    const start = new Date(startDateStr);
+                    const unit = item.cycleUnit || 'day';
+                    const interval = parseInt(item.intervalDays) || 1;
+                    if (unit === 'year') start.setFullYear(start.getFullYear() + interval);
+                    else if (unit === 'month') start.setMonth(start.getMonth() + interval);
+                    else start.setDate(start.getDate() + interval);
+                    const y = start.getFullYear();
+                    const m = (start.getMonth() + 1).toString().padStart(2, '0');
+                    const d = start.getDate().toString().padStart(2, '0');
+                    return y + '-' + m + '-' + d;
+                }
+            } catch (e) {
+                console.error('Cycle calculation error:', e);
+            }
+            return null;
         };
 
         createApp({
@@ -2533,7 +2589,7 @@ const HTML = `<!DOCTYPE html>
                 const dataVersion = ref(0); // 新增版本号状态
                 const dialogVisible = ref(false), settingsVisible = ref(false), historyVisible = ref(false), historyLoading = ref(false), historyLogs = ref([]);
                 const checking = ref(false), logs = ref([]), displayLogs = ref([]), isEdit = ref(false), lang = ref('zh'), currentTag = ref(''), searchKeyword = ref('');
-                const locale = ref(ZhCn), tableKey = ref(0), termRef = ref(null);
+                const locale = ref(ZhCn), tableKey = ref(0), termRef = ref(null), submitting = ref(false);
                 const form = ref({ id:'', name:'', createDate:'', lastRenewDate:'', intervalDays:30, cycleUnit:'day', type:'cycle', message:'', enabled:true, tags:[], useLunar:false, notifyDays:3, notifyTime: '08:00', autoRenew:true, autoRenewDays:3, fixedPrice:0, currency:'CNY', renewHistory:[] });
                 const settingsForm = ref({ 
                     notifyUrl:'', 
@@ -2670,7 +2726,22 @@ const HTML = `<!DOCTYPE html>
                 });
 
                 onMounted(() => {
-
+                    // Check if migration is needed (Once per day)
+                    const checkMigrationNeeded = async () => {
+                        const lastCheck = localStorage.getItem('lastMigrationCheck');
+                        const today = new Date().toDateString();
+                        
+                        if (lastCheck === today) return; // Already checked today
+                        
+                        // Wait for list to load (simple poll since list is loaded async in login or initial load)
+                        // Actually list is empty until login. Assuming user is logged in or will log in.
+                        // We can hook into the login success or list load.
+                        // But onMounted runs once. 
+                        // Let's rely on list watcher or check after a delay if logged in.
+                        // However, simpler approach: Check when list is populated.
+                    };
+                    
+                    // Theme init
                     const savedTheme = localStorage.getItem('theme');
 
                     const sysDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
@@ -2686,6 +2757,40 @@ const HTML = `<!DOCTYPE html>
                     const l = localStorage.getItem('lang'); if(l) setLang(l);
                     const tk = localStorage.getItem('jwt_token'); if(tk) fetchList(tk);
                     
+                    // After initial fetchList (if token exists), check for migration
+                    // Using a watcher on list.value to ensure it's populated
+                    const unwatchList = watch(list, (newList) => {
+                        if (newList && newList.length > 0) {
+                            const info = newList.filter(item => (!item.renewHistory || item.renewHistory.length === 0) && item.lastRenewDate && item.intervalDays);
+                            if (info.length > 0) {
+                                const lastCheck = localStorage.getItem('lastMigrationCheck');
+                                const today = new Date().toDateString();
+                                if (lastCheck !== today) {
+                                    localStorage.setItem('lastMigrationCheck', today);
+                                    ElMessageBox.confirm(
+                                        lang.value === 'zh' 
+                                            ? '检测到 ' + info.length + ' 个项目缺少历史账单。建议先备份数据再执行迁移，是否继续？(今日仅提示一次)' 
+                                            : 'Found ' + info.length + ' items without history. Recommend backup first. Continue? (Ask once today)',
+                                        lang.value === 'zh' ? '数据优化建议' : 'Optimization Suggestion',
+                                        { confirmButtonText: lang.value === 'zh' ? '备份并迁移' : 'Backup & Migrate', cancelButtonText: t('cancel'), type: 'info' }
+                                    ).then(async () => {
+                                        await exportData();
+                                        setTimeout(() => {
+                                            ElMessageBox.confirm(
+                                                lang.value === 'zh' ? '备份文件是否已保存？确认后将开始迁移。' : 'Is the backup saved? Migration will start upon confirmation.',
+                                                lang.value === 'zh' ? '最后确认' : 'Final Confirmation',
+                                                { confirmButtonText: lang.value === 'zh' ? '确认迁移' : 'Start Migration', cancelButtonText: t('cancel'), type: 'warning' }
+                                            ).then(() => {
+                                                migrateOldData(true);
+                                            }).catch(()=>{});
+                                        }, 1000);
+                                    }).catch(()=>{});
+                                }
+                            }
+                            unwatchList(); // Stop watching after the first check
+                        }
+                    });
+
                     window.addEventListener('resize', updateWidth);
                 });
 
@@ -2958,15 +3063,17 @@ const HTML = `<!DOCTYPE html>
                 };
 
                 // 迁移旧数据：为没有续费记录的项目生成初始账单
-                const migrateOldData = async () => {
+                const migrateOldData = async (skipConfirm = false) => {
                     try {
-                        await ElMessageBox.confirm(
-                            lang.value === 'zh' 
-                                ? '此操作将为所有没有续费记录的项目生成初始账单，是否继续？' 
-                                : 'This will generate initial bills for all items without history. Continue?',
-                            lang.value === 'zh' ? '数据迁移' : 'Data Migration',
-                            { type: 'info', confirmButtonText: t('yes'), cancelButtonText: t('no') }
-                        );
+                        if (!skipConfirm) {
+                            await ElMessageBox.confirm(
+                                lang.value === 'zh' 
+                                    ? '此操作将为所有没有续费记录的项目生成初始账单，是否继续？' 
+                                    : 'This will generate initial bills for all items without history. Continue?',
+                                lang.value === 'zh' ? '数据迁移' : 'Data Migration',
+                                { type: 'info', confirmButtonText: t('yes'), cancelButtonText: t('no') }
+                            );
+                        }
                         
                         let count = 0;
                         const now = new Date();
@@ -3135,6 +3242,12 @@ const HTML = `<!DOCTYPE html>
                     ratesLoading.value = false;
                 };
 
+                // Compute current item info for Renew Dialog display
+                const currentRenewItem = computed(() => {
+                    if (!renewForm.value.id) return {};
+                    return list.value.find(i => i.id === renewForm.value.id) || {};
+                });
+
                 const openRenew = (row) => {
                     // Helper: 格式化日期 (YYYY-MM-DD)
                     const formatDate = (d) => \`\${d.getFullYear()}-\${(d.getMonth() + 1).toString().padStart(2, '0')}-\${d.getDate().toString().padStart(2, '0')}\`;
@@ -3216,6 +3329,8 @@ const HTML = `<!DOCTYPE html>
                 };
 
                 const submitRenew = async () => {
+                    if (submitting.value) return;
+                    
                     const rf = renewForm.value;
                     
                     // 构建历史记录对象
@@ -3228,51 +3343,93 @@ const HTML = `<!DOCTYPE html>
                         note: rf.note
                     };
                     
-                    // ===== addHistory 模式：补录历史 =====
-                    if (renewMode.value === 'addHistory') {
-                        // 验证周期重叠
-                        const overlapResult = checkPeriodOverlap(rf.startDate, rf.endDate);
-                        if (overlapResult.overlap) {
-                            const existRecord = overlapResult.record;
-                            ElMessage.warning(lang.value === 'zh' 
-                                ? '账单周期与已有记录重叠 (' + existRecord.startDate + ' ~ ' + existRecord.endDate + ')，请修改已有记录而非添加新记录'
-                                : 'Period overlaps with existing record (' + existRecord.startDate + ' ~ ' + existRecord.endDate + '). Please edit the existing record instead.'
-                            );
+                    submitting.value = true;
+                    // 【优化】立即关闭弹窗，提升响应速度并防止重复点击
+                    renewDialogVisible.value = false;
+                    
+                    try {
+                        // 1. 验证日期与周期是否匹配 (Common Validation) - 适用于 renew 和 addHistory
+                        let item = null;
+                        if (renewMode.value === 'addHistory') {
+                            item = currentHistoryItem.value;
+                        } else {
+                            item = list.value.find(i => i.id === rf.id);
+                        }
+
+                        if (item && item.intervalDays) {
+                            const expectedEnd = calculateCycleEndDate(rf.startDate, item);
+                            if (expectedEnd && expectedEnd !== rf.endDate) {
+                                try {
+                                    await ElMessageBox.confirm(
+                                        lang.value === 'zh' ? '当前结束日期与周期设置不符，是否确认保存？' : 'End date does not match the cycle settings. Save anyway?',
+                                        lang.value === 'zh' ? '周期不匹配' : 'Cycle Mismatch',
+                                        { confirmButtonText: t('yes'), cancelButtonText: t('cancel'), type: 'warning' }
+                                    );
+                                } catch (e) {
+                                    renewDialogVisible.value = true;
+                                    submitting.value = false;
+                                    return;
+                                }
+                            }
+                        }
+
+                        // ===== addHistory 模式：补录历史 =====
+                        if (renewMode.value === 'addHistory') {
+
+                            // 验证周期重叠
+                            const overlapResult = checkPeriodOverlap(rf.startDate, rf.endDate);
+                            if (overlapResult.overlap) {
+                                // 验证失败，重新打开弹窗（虽然闪烁但为了安全）
+                                renewDialogVisible.value = true;
+                                submitting.value = false;
+                                const existRecord = overlapResult.record;
+                                ElMessage.warning(lang.value === 'zh' 
+                                    ? '账单周期与已有记录重叠 (' + existRecord.startDate + ' ~ ' + existRecord.endDate + ')，请修改已有记录而非添加新记录'
+                                    : 'Period overlaps with existing record (' + existRecord.startDate + ' ~ ' + existRecord.endDate + '). Please edit the existing record instead.'
+                                );
+                                return;
+                            }
+                            
+                            // 添加记录后按 endDate 降序排序（最新的在前）
+                            const history = currentHistoryItem.value.renewHistory;
+                            history.push(historyRecord);
+                            history.sort((a, b) => new Date(b.endDate) - new Date(a.endDate));
+                            
+                            // 同步到主列表并保存
+                            const realRow = list.value.find(i => i.id === currentHistoryItem.value.id);
+                            if (realRow) {
+                                realRow.renewHistory = currentHistoryItem.value.renewHistory;
+                                await saveData(null, null, true);
+                            }
+                            
+                            historyPage.value = 1;
                             return;
                         }
                         
-                        // 添加记录后按 endDate 降序排序（最新的在前）
-                        const history = currentHistoryItem.value.renewHistory;
-                        history.push(historyRecord);
-                        history.sort((a, b) => new Date(b.endDate) - new Date(a.endDate));
+                        // ===== renew 模式：手动续期 =====
+                        const row = list.value.find(i => i.id === rf.id);
+                        if (!row) return;
                         
-                        // 同步到主列表并保存
-                        const realRow = list.value.find(i => i.id === currentHistoryItem.value.id);
-                        if (realRow) {
-                            realRow.renewHistory = currentHistoryItem.value.renewHistory;
-                            await saveData(null, null, true);
-                        }
+                        if (!Array.isArray(row.renewHistory)) row.renewHistory = [];
+                        row.renewHistory.unshift(historyRecord);
+
+                        // 更新主记录的 lastRenewDate
+                        const oldDate = row.lastRenewDate;
+                        row.lastRenewDate = rf.renewDate.substring(0, 10);
                         
-                        renewDialogVisible.value = false;
-                        historyPage.value = 1;
-                        return;
+                        // 乐观更新 UI
+                        tableKey.value++;
+                        ElMessage.success(t('msg.renewSuccess').replace('%s', oldDate).replace('%t', row.lastRenewDate));
+
+                        // 异步保存
+                        await saveData(null, null, false);
+                    } catch(e) {
+                         console.error(e);
+                         renewDialogVisible.value = true; // 发生错误重新打开以便重试
+                         ElMessage.error(e.message||'Error');
+                    } finally {
+                        submitting.value = false;
                     }
-                    
-                    // ===== renew 模式：手动续期 =====
-                    const row = list.value.find(i => i.id === rf.id);
-                    if (!row) return;
-                    
-                    if (!Array.isArray(row.renewHistory)) row.renewHistory = [];
-                    row.renewHistory.unshift(historyRecord);
-
-                    // 更新主记录的 lastRenewDate
-                    const oldDate = row.lastRenewDate;
-                    row.lastRenewDate = rf.renewDate.substring(0, 10);
-
-                    await saveData(null, null, false);
-                    renewDialogVisible.value = false;
-                    tableKey.value++;
-                    ElMessage.success(t('msg.renewSuccess').replace('%s', oldDate).replace('%t', row.lastRenewDate));
                 };
 
                 const openHistory = (row) => {
@@ -3341,6 +3498,25 @@ const HTML = `<!DOCTYPE html>
                     return { overlap: false };
                 };
 
+// Watch startDate to auto-calculate endDate in AddHistory mode
+                watch(() => renewForm.value.startDate, (newVal) => {
+                    if (!newVal) return;
+                    
+                    let item = null;
+                    if (renewMode.value === 'addHistory') {
+                        item = currentHistoryItem.value;
+                    } else if (renewMode.value === 'renew') {
+                        item = list.value.find(i => i.id === renewForm.value.id);
+                    }
+                    
+                    if (!item || !item.intervalDays) return;
+
+                    const newEnd = calculateCycleEndDate(newVal, item);
+                    if (newEnd) {
+                        renewForm.value.endDate = newEnd;
+                    }
+                });
+
                 // Open Add History via Renew Dialog (reuse)
                 const addHistoryRecord = () => {
                     const now = new Date();
@@ -3351,13 +3527,14 @@ const HTML = `<!DOCTYPE html>
                         name: currentHistoryItem.value.name,
                         renewDate: formatDateTime(now),
                         startDate: d,
-                        endDate: d,
-                        price: 0,
-                        currency: settings.value.defaultCurrency || 'CNY',
+                        endDate: d, // Will be updated by watcher
+                        price: currentHistoryItem.value.fixedPrice || 0,
+                        currency: currentHistoryItem.value.currency || settings.value.defaultCurrency || 'CNY',
                         note: ''
                     };
                     renewMode.value = 'addHistory';
                     renewDialogVisible.value = true;
+                    submitting.value = false;
                 };
 
                 // Submit Add History
@@ -3564,7 +3741,7 @@ const HTML = `<!DOCTYPE html>
                     renewDialogVisible, renewMode, renewForm, openRenew, submitRenew,
                     historyDialogVisible, currentHistoryItem, historyPage, historyPageSize, pagedHistory, openHistory, saveHistoryInfo, addHistoryRecord, removeHistoryRecord, historyStats, exchangeRates, ratesLoading,
                     addHistoryDialogVisible, addHistoryForm, submitAddHistory,
-                    editingHistoryIndex, tempHistoryItem, startEditHistory, saveEditHistory, cancelEditHistory
+                    editingHistoryIndex, tempHistoryItem, startEditHistory, saveEditHistory, cancelEditHistory, submitting, currentRenewItem
                 };
             }
         }).use(ElementPlus).mount('#app');
