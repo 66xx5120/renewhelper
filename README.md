@@ -6,7 +6,7 @@
 ![Vue.js](https://img.shields.io/badge/Frontend-Vue3%20%2B%20ElementPlus-42b883?logo=vue.js)
 ![License](https://img.shields.io/badge/License-MIT-blue)
 
-**RenewHelper - 时序·守望** 是一款基于 **Cloudflare Workers** 的全栈服务生命周期提醒、管理工具。它专为管理周期性订阅、域名续费、服务器到期等场景设计。无需服务器，零成本托管，提供精美的机甲风（Mecha-style）UI 界面、强大的农历/公历计算核心、多渠道通知推送能力以及 iCal 日程同步。**同时支持Worker方式和Docker方式部署。v2.x新增资金流向看板，拥有完善的账单管理功能。**
+**RenewHelper - 时序·守望** 是一款基于 **Cloudflare Workers** 的全栈服务生命周期提醒、管理工具。它专为管理周期性订阅、域名续费、服务器到期等场景设计。无需服务器，零成本托管，提供精美的机甲风（Mecha-style）UI 界面、强大的农历/公历计算核心、多渠道通知推送能力以及 iCal 日程同步。**同时支持Worker方式和Docker方式部署。v2.x新增资金流向看板，拥有完善的账单管理功能。v3.x前后端完全分离重构，不依赖任何CDN引入即可独立运行。**
 
 <div align="center">
   <img src="./assets/mainUI_darkCN_shotv2.png" alt="RenewHelper 界面预览" width="800">
@@ -15,14 +15,15 @@
 
 ## ✨ 核心特性
 
-- **⚡️ Serverless 架构**：完全运行在 Cloudflare Workers 上，利用 KV 存储数据，无需购买 VPS，免费额度通常足够个人使用。v1.3.5+ 已同时支持单机Docker方式部署。
+- **⚡️ Serverless 架构**：完全运行在 Cloudflare Workers 上，利用 KV 存储数据，无需购买 VPS，免费额度通常足够个人使用。并同时支持单机Docker方式部署，不依赖任何CDN引入即可独立运行。
 - **📅 智能周期管理**：
   - 支持**公历**与**农历**（Lunar）周期计算。内置高精度农历算法（1900-2100），支持公历循环（如月付/年付）和农历循环（如生日、传统节日）。
   - 支持按天、月、年为周期的自动推算。
   - 提供“循环订阅”与“到期重置”两种模式。
 - **🔔 多渠道通知**：
-  - 内置支持 **Telegram, Bark, PushPlus, NotifyX, Resend (Email), Gotify, Ntfy, Webhook (x3)**。
-  - 支持自定义提前提醒天数和每日推送时间。
+  - 内置支持 **Telegram, Bark, PushPlus, NotifyX, Resend (Email), Gotify, Ntfy, Webhook**。
+  - 允许添加**无限个**推送渠道，支持为每个项目配置不同的推送渠道。
+  - 支持自定义推送标题、提前提醒天数和每日推送时间。
 - **💰 资金流向看板** (New v2.0+)：
   - 提供精美的账单统计视图，支持按月、按年查看消费趋势。
   - 支持**多币种**混合统计（自动汇率转换）。
@@ -291,7 +292,7 @@ docker compose up -d
     *   值填写您的 Bot Token（如果有多个用逗号分隔）。
     *   *如果不配置环境变量，需手动修改代码中的 `WHITELIST_TOKENS` 常量。*
 4.  **使用**：
-    *   您的代理地址为：`https://tg-proxy.您的子域名.workers.dev`
+    *   您的代理地址为：`https://tg-proxy.您的子域名.workers.dev` 或您的自定义域名。
     *   此服务可作为 Telegram API 的透明代理，支持 `POST /bot<Token>/<Method>` 格式的请求。
     *   *注：此脚本主要用于解决 Docker 部署环境下或特定网络环境下无法访问 Telegram API 的问题。*
 
@@ -309,12 +310,12 @@ docker compose up -d
     - **通知总开关**：开启后可配置具体的推送渠道。
 
 <div align="center">
-  <img src="./assets/configUI_darkCN_shotv2.png" alt="RenewHelper 界面预览" width="800">
+  <img src="./assets/configUI_darkCN_shotv3.png" alt="RenewHelper 界面预览" width="800">
 </div>
 
 ### 📢 推送渠道配置说明
 
-在“系统设置” -\> “通知配置”中填写：
+在“系统设置” -> “通知配置”区域，点击 **添加渠道** 按钮，选择类型并填写参数。系统支持同时配置**无限个**推送渠道。配置完成后支持**发送测试**以验证连通性。
 
 | 渠道              | 参数说明                                                           | 获取/配置方法                                                                                                                                                                                                                               |
 | :---------------- | :----------------------------------------------------------------- | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -325,7 +326,7 @@ docker compose up -d
 | **Resend** (邮件) | **API Key**: Resend 密钥<br>**From**: 发件地址<br>**To**: 收件地址 | 1. 注册 [Resend](https://resend.com/)。<br>2. 绑定域名并获取 API Key。<br>3. `From` 必须是您验证过的域名邮箱（如 `alert@yourdomain.com`）。若您没有域名邮箱，可以使用`onboarding@resend.dev`，发送至您注册 resend 账号的邮箱。              |
 | **Gotify**        | **Server**: 服务器地址<br>**Token**: 应用 Token                    | 自建 Gotify 服务器，创建一个 Application 获取 Token。                                                                                                                                                                                                       |
 | **Ntfy**          | **Server**: 服务器 (默认 ntfy.sh)<br>**Topic**: 主题<br>**Token**: 令牌 | 1. **Server**: 若自建则填自建地址，否则留空默认为 `https://ntfy.sh`。<br>2. **Topic**: 您订阅的主题名称。<br>3. **Token**: (可选) 如果主题受保护，需填写 Access Token，否则留空。                                                                           |
-| **Webhook**       | **URL**: POST 地址                                                 | 适用于自定义开发。系统支持配置 **3个** Webhook 地址。系统会向该 URL 发送 POST 请求：`{ "title": "...", "content": "..." }`。[WEBHOOK 配置教程](./webhook_guide_zh.md)                                                                                                                                                   |
+| **Webhook**       | **URL**: POST 地址                                                 | 适用于自定义开发。系统会向该 URL 发送 POST 请求：`{ "title": "...", "content": "..." }`。[WEBHOOK 配置教程](./webhook_guide_zh.md)                                                                                                                                                   |
 
 ---
 
@@ -391,12 +392,12 @@ docker compose up -d
 
 ### 🔄 升级旧数据
 
-如果您是从 v1.x 版本升级到 v2.x，数据结构是兼容的。
+如果您是从 v1.x 版本升级到 v3.x，数据结构是兼容的。
 
 1.  在旧版本中执行 **导出**，获取 `.json` 文件。
 2.  部署新版 Worker (覆盖 `_worker.js` 代码)。
 3.  在新版中 **导入** 刚才的备份文件。
-4.  系统会自动识别并兼容旧版数据，缺少的字段（如币种、历史记录）会使用默认值填充。
+4.  系统会自动识别并兼容旧版数据，缺少的字段（如币种、历史记录）会使用默认值填充，旧版推送渠道会自动迁移。
 
 
 

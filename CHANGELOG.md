@@ -32,3 +32,9 @@
 - 2026-01-08: hotfix: emergency fix v2.0.19
 - 2026-01-09: added: exchange rate proxy, kv cache, auto-sync workflow, watchtower support v2.0.20
 - 2026-02-01: added: add telegram proxy for china mainland; improved: migration confirmation dialog & ui layoutcompact; fixed: sort icon issue v2.2.7
+- 2026-02-02: modified: rebuild the entire project with a separated frontend & backend, using on-demand inline builds v3.0.1 
+- 2026-02-04: improved: refactor build config, fix notification migration check, optimize exchange rate fallback & UI v3.0.22
+- 2026-02-04: improved: optimize exchange rate UI with icon & tooltip v3.0.24
+- 2026-02-04: fixed: force icon colors for exchange rate status v3.0.26
+- 2026-02-05: improved: dual-mode build (inline/cdn) with local fonts; fixed: ghcr deploy actions; fixed: bill projection logic for short cycles v3.0.37
+- 2026-02-06: fixed: ntfy migration check topic value not token v3.0.28

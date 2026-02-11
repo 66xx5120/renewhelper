@@ -6,7 +6,7 @@
 ![Vue.js](https://img.shields.io/badge/Frontend-Vue3%20%2B%20ElementPlus-42b883?logo=vue.js)
 ![License](https://img.shields.io/badge/License-MIT-blue)
 
-**RenewHelper** is a full-stack service lifecycle reminder and management tool based on **Cloudflare Workers**. It is designed to manage periodic subscriptions, domain renewals, server expirations, and more. It requires no server (Serverless), incurs zero hosting costs, and features a stunning Mecha-style UI, a powerful Lunar/Solar calendar core, multi-channel notifications, and iCal schedule synchronization. **It supports both Worker and Docker deployments. v2.x introduces a cash flow dashboard with comprehensive billing management features.**
+**RenewHelper** is a full-stack service lifecycle reminder and management tool based on **Cloudflare Workers**. It is designed to manage periodic subscriptions, domain renewals, server expirations, and more. It requires no server (Serverless), incurs zero hosting costs, and features a stunning Mecha-style UI, a powerful Lunar/Solar calendar core, multi-channel notifications, and iCal schedule synchronization. **It supports both Worker and Docker deployments. v2.x introduces a cash flow dashboard with comprehensive billing management features. v3.x features a fully refactored frontend/backend separation and can run independently without any CDN dependencies.**
 
 <div align="center">
   <img src="./assets/mainUI_lightEN_shotv2.png" alt="RenewHelper 界面预览" width="800">
@@ -15,15 +15,16 @@
 
 ## ✨ Key Features
 
-- **⚡️ Serverless Architecture**: Runs entirely on Cloudflare Workers using KV storage. No VPS required, and the free tier is usually sufficient for personal use. v1.3.5+ now also supports standalone Docker deployment.
+- **⚡️ Serverless Architecture**: Runs entirely on Cloudflare Workers using KV storage. No VPS required, and the free tier is usually sufficient for personal use. It also supports standalone Docker deployment and can run independently without relying on any CDN.
 - **📅 Smart Cycle Management**:
   - Supports both **Solar (Gregorian)** and **Lunar** calendar cycles. Built-in high-precision Lunar algorithm (1900-2100).
   - Perfect for handling monthly/yearly subscriptions (Solar) or birthdays/traditional festivals (Lunar).
   - Supports automatic calculation based on Day, Month, or Year intervals.
   - Two modes: "Cycle Subscription" (Repeating) and "Expiration Reset" (Manual extension).
 - **🔔 Multi-Channel Notifications**:
-  - Built-in support for **Telegram, Bark, PushPlus, NotifyX, Resend (Email), Gotify, Ntfy, Webhook (x3)**.
-  - Customizable advance notice days and daily push times.
+  - Built-in support for **Telegram, Bark, PushPlus, NotifyX, Resend (Email), Gotify, Ntfy, Webhook**.
+  - Allows adding **unlimited** notification channels, supporting different channels for each project.
+  - Support customizable push titles, advance notice days, and daily push times.
 - **💰 Billing & Spending Dashboard** (New v2.0+):
   - Stunning visualization of your spending trends by month and year.
   - **Multi-currency** support with automatic exchange rate conversion.
@@ -284,12 +285,12 @@ After deployment, visit your Worker URL or custom domain (e.g., `https://renewhe
     - **Master Notification Switch**: Enable to configure specific notification channels.
 
 <div align="center">
-  <img src="./assets/configUI_lightEN_shotv2.png" alt="RenewHelper 界面预览" width="800">
+  <img src="./assets/configUI_lightEN_shotv3.png" alt="RenewHelper 界面预览" width="800">
 </div>
 
 ### 📢 Notification Channels
 
-Configure these in "Settings" -> "Notifications":
+In the "Settings" -> "Notifications" section, click the **Add Channel** button, select the type, and fill in the parameters. The system supports configuring **unlimited** notification channels simultaneously. You can **Send Test** to verify connectivity after configuration.
 
 | Channel            | Parameter Description                                                       | How to Obtain/Configure                                                                                                                                                                                                                                  |
 | :----------------- | :-------------------------------------------------------------------------- | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -300,7 +301,7 @@ Configure these in "Settings" -> "Notifications":
 | **Resend** (Email) | **API Key**: Resend Key<br>**From**: Sender Email<br>**To**: Receiver Email | 1. Register at [Resend](https://resend.com/).<br>2. Bind a domain and get an API Key.<br>3. `From` must be a verified domain email (e.g., `alert@yourdomain.com`). If you don't have one, use `onboarding@resend.dev` and send to your registered email. |
 | **Gotify**         | **Server**: URL<br>**Token**: App Token                                     | Self-hosted Gotify server. Create an Application to get the Token.                                                                                                                                                                                                       |
 | **Ntfy**           | **Server**: URL (Def: ntfy.sh)<br>**Topic**: Topic<br>**Token**: Token      | 1. **Server**: Leave empty for default `https://ntfy.sh`.<br>2. **Topic**: The topic name you subscribed to.<br>3. **Token**: (Optional) Required if your topic is protected.                                                                                          |
-| **Webhook**        | **URL**: POST URL                                                           | For custom development. Supports **3** Webhooks. The system sends a POST request: `{ "title": "...", "content": "..." }`. [Webhook Configuration Guide](./webhook_guide_en.md)                                                                                                                                                        |
+| **Webhook**        | **URL**: POST URL                                                           | For custom development. The system sends a POST request: `{ "title": "...", "content": "..." }`. [Webhook Configuration Guide](./webhook_guide_en.md)                                                                                                                                                        |
 
 ---
 
@@ -365,12 +366,12 @@ The system supports full data import/export for backup or migration purposes.
 
 ### 🔄 Migrate from Older Versions
 
-If you are upgrading from v1.x to v2.x, the data structure is backward compatible.
+If you are upgrading from v1.x to v3.x, the data structure is backward compatible.
 
 1.  **Export** data from the old version to get the `.json` file.
 2.  Deploy the new version of the Worker (overwrite `_worker.js`).
 3.  **Import** the backup file in the new version.
-4.  The system automatically recognizes and adapts old data; missing fields (e.g., currency, history) will be filled with default values.
+4.  The system automatically recognizes and adapts old data; missing fields (e.g., currency, history) will be filled with default values. All channels will be automatically migrated.
 
 
 
