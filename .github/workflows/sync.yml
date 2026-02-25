@@ -17,7 +17,11 @@ jobs:
     steps:
       # 步骤 1: 检出代码
       - name: Checkout target repo
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
+        with:
+          # 【同步工作流需要PERSONAL_ACCESS_TOKEN】在这里就指定使用你的 PAT，覆盖默认的 GITHUB_TOKEN
+          token: ${{ secrets.ACTION_TOKEN }} 
+          persist-credentials: true
 
       # 步骤 2: 同步上游
       - name: Sync upstream changes
@@ -27,7 +31,7 @@ jobs:
           upstream_sync_repo: ieax/renewhelper # 你的上游仓库地址 (用户名/仓库名)
           upstream_sync_branch: main           # 你更新的分支
           target_sync_branch: main             # Fork 仓库要更新的分支
-          target_repo_token: ${{ secrets.GITHUB_TOKEN }} # 自动生成的 token，无需用户配置
+          target_repo_token: ${{ secrets.ACTION_TOKEN }} # 使用你的 PAT，覆盖默认的 GITHUB_TOKEN
           test_mode: false
 
       # 步骤 3: 检查是否有新提交（可选，用于显示日志）

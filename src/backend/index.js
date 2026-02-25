@@ -1,12 +1,12 @@
 /**
- * Cloudflare Worker: RenewHelper (v2.2.7)
+ * Cloudflare Worker: RenewHelper (v3)
  * Author: LOSTFREE
  * Features: Multi-Channel Notify, Import/Export, Channel Test, Bilingual UI, Precise ICS Alarm，Bill Management.
  * See CHANGELOG.md for history.
  */
 import { HTML } from '../html-template.js';
 // APP_VERSION 将在构建时由 esbuild 注入 (__BUILD_VERSION__)
-const APP_VERSION = "__BUILD_VERSION__";
+const APP_VERSION = __BUILD_VERSION__;
 //接入免费汇率API
 const EXCHANGE_RATE_API_URL = 'https://api.frankfurter.dev/v1/latest?base=';
 
@@ -513,12 +513,60 @@ const RateLimiter = {
         }
 
         // 增加计数并写入 KV (设置 24小时过期)
-        // 使用 waitUntil 可以在后台写入，不阻塞响应速度（如果你的环境支持，否则直接 await）
+        // 使用 waitUntil 可以在后台写入，不阻塞响应速度
+        // 注意: 这里的 put 会覆盖 TTL，所以每次更新都要带上
         await env.RENEW_KV.put(kvKey, (count + 1).toString(), {
             expirationTtl: 86400,
         });
 
         return true;
+    },
+
+    // --- Anti-Brute-Force ---
+    async checkBruteForce(env, ip) {
+        if (!ip) return true;
+        // 检查是否存在封禁Key
+        const banKey = `BAN:${ip}`;
+        const banned = await env.RENEW_KV.get(banKey);
+        return !banned; // 如果存在 banned，则返回 false (不允许通过)
+    },
+
+    async recordFailure(env, ip) {
+        if (!ip) return;
+        const now = Math.floor(Date.now() / 1000); // Unix timestamp in seconds
+        const failKey = `FAIL:${ip}`; // 记录失败次数的 Key
+
+        // 获取当前失败记录
+        // 格式: "count:last_fail_timestamp" 例如 "2:1678888888"
+        // 或者简单存个 JSON: { c: 2, t: 1678888888 }
+        const raw = await env.RENEW_KV.get(failKey);
+        let data = raw ? JSON.parse(raw) : { c: 0, t: 0 };
+
+        // 策略: 5分钟内 (300s) 累计失败 5 次 -> 封 IP 15分钟 (900s)
+        const WINDOW = 300;
+        const THRESHOLD = 5;
+        const BAN_TIME = 900;
+
+        // 如果距离上次失败超过窗口期，重置计数
+        if (now - data.t > WINDOW) {
+            data.c = 0;
+        }
+
+        data.c += 1;
+        data.t = now;
+
+        if (data.c >= THRESHOLD) {
+            // 触发封禁
+            const banKey = `BAN:${ip}`;
+            await env.RENEW_KV.put(banKey, "1", { expirationTtl: BAN_TIME });
+            // 清除失败记录（封禁期间不需要再计数，解封后重新开始）
+            await env.RENEW_KV.delete(failKey);
+            return { banned: true, msg: "Too many failures. IP Banned for 15 min." };
+        }
+
+        // 更新失败计数 (设置过期时间为窗口期，稍大一点防止临界值问题)
+        await env.RENEW_KV.put(failKey, JSON.stringify(data), { expirationTtl: WINDOW + 60 });
+        return { banned: false, remaining: THRESHOLD - data.c };
     },
 };
 
@@ -681,6 +729,87 @@ const Notifier = {
                 method: "POST",
                 headers: headers,
                 body: body,
+            });
+            return r.ok ? "OK" : "FAIL";
+        },
+        serverchan3: async (c, title, body) => {
+            if (!c.uid || !c.key) return "MISSING_CONF";
+            const url = `https://${c.uid}.push.ft07.com/send/${c.key}.send?title=${encodeURIComponent(title)}&desp=${encodeURIComponent(body)}`;
+            const r = await fetch(url);
+            return r.ok ? "OK" : "FAIL";
+        },
+        dingtalk: async (c, title, body) => {
+            if (!c.token) return "MISSING_CONF";
+            let url = `https://oapi.dingtalk.com/robot/send?access_token=${c.token}`;
+            if (c.secret) {
+                const timestamp = Date.now();
+                const str = `${timestamp}\n${c.secret}`;
+                const key = await crypto.subtle.importKey(
+                    "raw", new TextEncoder().encode(c.secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]
+                );
+                const sign = btoa(String.fromCharCode(...new Uint8Array(await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(str)))));
+                url += `&timestamp=${timestamp}&sign=${encodeURIComponent(sign)}`;
+            }
+            const r = await fetch(url, {
+                method: "POST", headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ msgtype: "markdown", markdown: { title, text: `## ${title}\n\n${body}` } })
+            });
+            return r.ok ? "OK" : "FAIL";
+        },
+        lark: async (c, title, body) => {
+            // 支持旧版 Webhook URL 配置（兼容性）
+            let url = c.webhook;
+            let reqBody = {
+                msg_type: "text",
+                content: { text: `${title}\n\n${body}` },
+            };
+
+            // 新版配置: Token + Secret
+            if (c.token) {
+                url = `https://open.feishu.cn/open-apis/bot/v2/hook/${c.token}`;
+                if (c.secret) {
+                    const timestamp = Math.floor(Date.now() / 1000);
+                    const stringToSign = `${timestamp}\n${c.secret}`;
+                    const mac = await crypto.subtle.importKey(
+                        "raw",
+                        new TextEncoder().encode(stringToSign),
+                        { name: "HMAC", hash: "SHA-256" },
+                        false,
+                        ["sign"]
+                    );
+                    const signBuf = await crypto.subtle.sign("HMAC", mac, new TextEncoder().encode(""));
+                    const sign = btoa(String.fromCharCode(...new Uint8Array(signBuf)));
+
+                    reqBody.timestamp = timestamp.toString();
+                    reqBody.sign = sign;
+                }
+            }
+
+            if (!url) return "MISSING_CONF";
+
+            const r = await fetch(url, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(reqBody),
+            });
+            return r.ok ? "OK" : "FAIL";
+        },
+        wecom: async (c, title, body) => {
+            let url = c.webhook;
+            if (c.token) {
+                let key = c.token;
+                if (key.includes("key=")) key = key.split("key=")[1]; // Tolerance for full URL paste
+                url = `https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=${key}`;
+            }
+            if (!url) return "MISSING_CONF";
+
+            const r = await fetch(url, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    msgtype: "text",
+                    text: { content: `${title}\n\n${body}` },
+                }),
             });
             return r.ok ? "OK" : "FAIL";
         },
@@ -1211,14 +1340,24 @@ app.get(
 );
 // 修改登录接口，增加限流
 app.post("/api/login", async (req, env) => {
-    const ip = req.headers.get("cf-connecting-ip");
+    const ip = req.headers.get("cf-connecting-ip") || "unknown"; // Fallback ip
+
+    // 1. 常规限流 (QPS / Daily)
     if (!(await RateLimiter.check(env, ip, "login")))
         return error("RATE_LIMIT_EXCEEDED: Try again later", 429);
 
+    // 2. 防爆破检查 (Ban Check)
+    if (!(await RateLimiter.checkBruteForce(env, ip))) {
+        return error("IP_BANNED: Too many failed attempts. Try again in 15 min.", 403);
+    }
+
     try {
         const body = await req.json();
-        return response({ code: 200, token: await Auth.login(body.password, env) });
+        const token = await Auth.login(body.password, env);
+        return response({ code: 200, token });
     } catch (e) {
+        // 3. 记录失败 (Record Failure)
+        await RateLimiter.recordFailure(env, ip);
         return error("AUTH_ERROR", 403);
     }
 });
@@ -1310,6 +1449,14 @@ app.post(
             jwtSecret: currentSettings.jwtSecret,
         };
 
+        // Validate Backup Key
+        if (newSettings.backupKey && newSettings.backupKey.trim()) {
+            const key = newSettings.backupKey.trim();
+            if (key.length < 8 || !/^(?=.*[a-zA-Z])(?=.*\d).+$/.test(key)) {
+                return error("INVALID_BACKUP_KEY: Min 8 chars, Alphanumeric", 400);
+            }
+        }
+
         // 2. 处理 items 数据清洗 + 【关键修复】强制重新计算状态
         const items = body.items.map((i) => {
             // 基础数据清洗
@@ -1371,6 +1518,59 @@ app.get(
             },
         });
     })
+);
+app.get(
+    "/api/backup",
+    async (req, env) => { // Removed withAuth wrapper for custom logic
+        const ip = req.headers.get("cf-connecting-ip") || "unknown";
+
+        // 1. 常规限流 (QPS check)
+        if (!(await RateLimiter.check(env, ip, "backup"))) {
+            return error("RATE_LIMIT_EXCEEDED", 429);
+        }
+
+        // 2. 防爆破检查
+        if (!(await RateLimiter.checkBruteForce(env, ip))) {
+            return error("IP_BANNED: Too many failed attempts. Try again in 15 min.", 403);
+        }
+
+        const settings = await DataStore.getSettings(env);
+        let authed = false;
+
+        // 3. Try JWT Auth
+        if (await Auth.verify(req, env)) authed = true;
+
+        // 4. Try Backup Key Auth (Header)
+        if (!authed && settings.backupKey) {
+            const key = req.headers.get("X-Backup-Key");
+            // 【修复】使用恒定时间比较防止时序攻击
+            if (key && (await Auth.safeCompare(key, settings.backupKey))) authed = true;
+        }
+
+        if (!authed) {
+            // 5. 记录失败 (Record Failure)
+            // 只有当提供了 Key 且错误，或者没提供 Key 时才算失败?
+            // 严格模式：只要鉴权失败就算一次尝试。
+            await RateLimiter.recordFailure(env, ip);
+            return error("UNAUTHORIZED", 401);
+        }
+
+        const data = await DataStore.getCombined(env);
+        delete data.settings.jwtSecret;
+        delete data.settings.backupKey; // Security: Do not export the backup key itself
+
+        const exportData = {
+            meta: { version: APP_VERSION, exportedAt: new Date().toISOString() },
+            ...data,
+        };
+        return new Response(JSON.stringify(exportData, null, 2), {
+            headers: {
+                "Content-Type": "application/json",
+                "Content-Disposition": `attachment; filename="RenewHelper_Backup_${new Date().toISOString().split("T")[0]
+                    }.json"`,
+            },
+        });
+    }
 );
 app.post(
     "/api/import",

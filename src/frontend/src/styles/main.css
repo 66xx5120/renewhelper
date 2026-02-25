@@ -164,6 +164,15 @@ html.dark body {
 
 .settings-body-fix .el-dialog__body {
     padding: 2px !important;
+    overflow: hidden !important;
+    max-width: 100% !important;
+    box-sizing: border-box !important;
+}
+
+/* 确保设置弹窗在移动端不会因内容溢出而扩张 */
+.settings-body-fix {
+    max-width: 100vw !important;
+    overflow: hidden !important;
 }
 
 .radio-group-fix {
