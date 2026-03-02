@@ -582,7 +582,6 @@ const Calc = {
     // 获取基于用户时区的“今天” (00:00:00 UTC)
     getTzToday(tz) {
         try {
-            // 使用 en-CA 格式化出的就是 YYYY-MM-DD
             const f = new Intl.DateTimeFormat("en-CA", {
                 timeZone: tz || "UTC",
                 year: "numeric",
@@ -591,12 +590,109 @@ const Calc = {
             });
             return this.parseYMD(f.format(new Date()));
         } catch (e) {
-            // 如果时区无效，回退到 UTC
             const d = new Date();
             d.setUTCHours(0, 0, 0, 0);
             return d;
         }
     },
+
+    // 生成某一月份中的 RRULE 候选日期
+    generateMonthCandidates(y, m, bymonthday, byweekday, bysetpos) {
+        let daysInMonth = new Date(Date.UTC(y, m + 1, 0)).getUTCDate();
+        let res = [];
+        if (bymonthday) {
+            for (let d of bymonthday) {
+                let testD = Number(d);
+                if (testD < 0) testD = daysInMonth + testD + 1;
+                if (testD > 0 && testD <= daysInMonth) {
+                    let dt = new Date(Date.UTC(y, m, testD));
+                    if (!byweekday || byweekday.includes(dt.getUTCDay())) res.push(dt);
+                }
+            }
+        } else {
+            for (let d = 1; d <= daysInMonth; d++) {
+                let dt = new Date(Date.UTC(y, m, d));
+                if (!byweekday || byweekday.includes(dt.getUTCDay())) res.push(dt);
+            }
+        }
+        if (bysetpos !== undefined && bysetpos !== null && bysetpos !== '') {
+            let pos = Number(bysetpos);
+            res.sort((a, b) => a.getTime() - b.getTime());
+            if (pos > 0 && pos <= res.length) res = [res[pos - 1]];
+            else if (pos < 0 && Math.abs(pos) <= res.length) res = [res[res.length + pos]];
+            else res = [];
+        }
+        return res;
+    },
+
+    // 核心：处理复杂自然周期 (RRULE 变体) 下一次执行日推断
+    calcNextRepeatDate(repeat, rDateStr, cDateStr) {
+        const dtstart = this.parseYMD(cDateStr || rDateStr);
+        const baseObj = this.parseYMD(rDateStr);
+        const freq = repeat.freq || "monthly";
+        const interval = Math.max(1, Number(repeat.interval) || 1);
+
+        // 强制转换为数组格式，若是空数组返回 null
+        const toArr = (v) => (Array.isArray(v) && v.length > 0) ? v : ((v !== undefined && v !== null && !Array.isArray(v)) ? [v] : null);
+        let bymonthday = toArr(repeat.bymonthday);
+        let byweekday = toArr(repeat.byweekday);
+        let bymonth = toArr(repeat.bymonth);
+        let bysetpos = repeat.bysetpos;
+
+        // 未指定任何具体定点修饰物时，取 dtstart 作为缺省值
+        if (!bymonthday && !byweekday && !bysetpos) {
+            if (freq === 'monthly' || freq === 'yearly') bymonthday = [dtstart.getUTCDate()];
+            if (freq === 'weekly') byweekday = [dtstart.getUTCDay()];
+        }
+        if (freq === 'yearly' && !bymonth) bymonth = [dtstart.getUTCMonth() + 1];
+
+        // 向前跨周期探测最近的触点
+        for (let periods = 0; periods < 100; periods++) {
+            let candidates = [];
+            let y = dtstart.getUTCFullYear(), m = dtstart.getUTCMonth(), d = dtstart.getUTCDate();
+
+            if (freq === 'yearly') {
+                y += periods * interval;
+                let mList = bymonth || [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
+                for (let testM of mList) candidates.push(...this.generateMonthCandidates(y, testM - 1, bymonthday, byweekday, bysetpos));
+            } else if (freq === 'monthly') {
+                let tm = m + periods * interval;
+                candidates.push(...this.generateMonthCandidates(y + Math.floor(tm / 12), tm % 12, bymonthday, byweekday, bysetpos));
+            } else if (freq === 'weekly') {
+                let wStart = new Date(Date.UTC(y, m, d + (periods * interval * 7)));
+                // 退回到那一周的周一 (国际标准 ISO 8601)
+                let dayOfWeek = wStart.getUTCDay();
+                let diffToMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
+                let mon = new Date(Date.UTC(wStart.getUTCFullYear(), wStart.getUTCMonth(), wStart.getUTCDate() - diffToMonday));
+                for (let i = 0; i < 7; i++) {
+                    let curr = new Date(Date.UTC(mon.getUTCFullYear(), mon.getUTCMonth(), mon.getUTCDate() + i));
+                    if (!byweekday || byweekday.includes(curr.getUTCDay())) candidates.push(curr);
+                }
+            } else if (freq === 'daily') {
+                let bycycleday = Array.isArray(repeat.bycycleday) ? repeat.bycycleday : (repeat.bycycleday ? [repeat.bycycleday] : null);
+                if (bycycleday && bycycleday.length > 0) {
+                    let cycleStart = new Date(Date.UTC(y, m, d + periods * interval));
+                    for (let bd of bycycleday) {
+                        let dayOffset = Number(bd) - 1;
+                        if (dayOffset >= 0 && dayOffset < interval) {
+                            candidates.push(new Date(Date.UTC(cycleStart.getUTCFullYear(), cycleStart.getUTCMonth(), cycleStart.getUTCDate() + dayOffset)));
+                        }
+                    }
+                } else {
+                    candidates.push(new Date(Date.UTC(y, m, d + periods * interval)));
+                }
+            }
+
+            // 选出严格大于 baseObj (上次执行点) 的候选日
+            candidates = candidates.filter(cd => cd > baseObj);
+            if (candidates.length > 0) {
+                candidates.sort((a, b) => a.getTime() - b.getTime());
+                return candidates[0];
+            }
+        }
+        // 无法找到匹配日期
+        return null;
+    }
 };
 
 // HTML转义工具
@@ -868,12 +964,18 @@ function calculateStatus(item, timezone = "UTC") {
 
     let nextObj;
 
-    // ============================================================
-    // 新逻辑: 优先使用续费历史中的 EndDate 作为下次到期日
-    // ============================================================
     const hasHistory = Array.isArray(item.renewHistory) && item.renewHistory.length > 0 && item.renewHistory[0].endDate;
 
-    if (hasHistory) {
+    if (item.repeat && item.repeat.freq) {
+        // ============================================================
+        // 1. 对于固定自然重复 (Repeat) 服务，严格遵循 RRULE 推算算法引擎
+        // ============================================================
+        nextObj = Calc.calcNextRepeatDate(item.repeat, rDate, cDate);
+
+    } else if (hasHistory) {
+        // ============================================================
+        // 2. 对于普通按量倒数服务：优先使用续费历史中的 EndDate 作为下次到期日
+        // ============================================================
         // 直接取最新一条历史记录的 endDate
         nextObj = Calc.parseYMD(item.renewHistory[0].endDate);
 
@@ -1125,7 +1227,11 @@ async function checkAndRenew(env, isSched, lang = "zh") {
             const unit = it.cycleUnit || 'day';
             const sDate = Calc.parseYMD(startStr);
 
-            if (it.useLunar) {
+            if (it.repeat && it.repeat.freq) {
+                // Repeat 类型特有逻辑: 结合基准日期直接向前推算下一次发生日
+                const nextD = Calc.calcNextRepeatDate(it.repeat, startStr, it.createDate);
+                endStr = Calc.toYMD(nextD);
+            } else if (it.useLunar) {
                 const l = LUNAR_DATA.solar2lunar(sDate.getUTCFullYear(), sDate.getUTCMonth() + 1, sDate.getUTCDate());
                 if (l) {
                     const nextL = calcBiz.addPeriod(l, intv, unit);
@@ -1189,13 +1295,16 @@ async function checkAndRenew(env, isSched, lang = "zh") {
 
             let shouldPush = true;
             if (isSched) {
-                // 定时任务运行时，检查是否到达指定的推送时间 (notifyTime)
-                const nTime = it.notifyTime || "08:00";
-                const [tgtH, tgtM] = nTime.split(":").map(Number);
-                const diffMinutes = Math.abs(nowH * 60 + nowM - (tgtH * 60 + tgtM));
+                // 定时任务运行时，检查是否到达指定的推送时间 (notifyTimes 数组优先，兼容旧版 notifyTime 字符串)
+                const ntArr = Array.isArray(it.notifyTimes) && it.notifyTimes.length > 0
+                    ? it.notifyTimes : [it.notifyTime || "08:00"];
+                const matched = ntArr.some(nt => {
+                    const [tgtH, tgtM] = String(nt).split(":").map(Number);
+                    return Math.abs(nowH * 60 + nowM - (tgtH * 60 + tgtM)) <= 5;
+                });
 
                 // 只有在设定时间前后 5分钟内才推送
-                if (diffMinutes > 5) {
+                if (!matched) {
                     shouldPush = false;
                 }
             }
@@ -1468,7 +1577,8 @@ app.post(
                 tags: Array.isArray(i.tags) ? i.tags : [],
                 useLunar: !!i.useLunar,
                 notifyDays: i.notifyDays !== null ? Number(i.notifyDays) : null,
-                notifyTime: i.notifyTime || "08:00",
+                notifyTime: typeof i.notifyTime === 'string' ? i.notifyTime : (Array.isArray(i.notifyTime) ? (i.notifyTime[0] || "08:00") : "08:00"),
+                notifyTimes: Array.isArray(i.notifyTimes) && i.notifyTimes.length > 0 ? i.notifyTimes : (typeof i.notifyTime === 'string' ? [i.notifyTime || "08:00"] : ["08:00"]),
                 autoRenew: i.autoRenew !== false,
                 autoRenewDays: i.autoRenewDays !== null ? Number(i.autoRenewDays) : null,
                 fixedPrice: Number(i.fixedPrice) || 0,
@@ -1710,11 +1820,39 @@ app.get("/api/calendar.ics", async (req, env, url) => {
         parts.push("STATUS:CONFIRMED");
         parts.push("TRANSP:TRANSPARENT");
 
-        const unitLabel = T.unit[item.cycleUnit] || item.cycleUnit;
-
         // 构建描述时，对动态内容应用转义
         let descParts = [];
-        descParts.push(`${T.lblCycle}: ${item.intervalDays}${unitLabel}`);
+        if (item.type === 'repeat' && item.repeat) {
+            // repeat 模式：生成规则文字描述
+            const r = item.repeat;
+            const isZh = lang === 'zh';
+            const freqMap = isZh
+                ? { daily: '天', weekly: '周', monthly: '个月', yearly: '年' }
+                : { daily: 'day(s)', weekly: 'week(s)', monthly: 'month(s)', yearly: 'year(s)' };
+            const wdMap = isZh
+                ? ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
+                : ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+            const monthAbbr = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+            let desc = isZh
+                ? `每 ${r.interval} ${freqMap[r.freq] || r.freq}`
+                : `Every ${r.interval} ${freqMap[r.freq] || r.freq}`;
+            if (r.bymonth && r.bymonth.length > 0) {
+                const ms = r.bymonth.map(m => isZh ? m + '月' : monthAbbr[m - 1]).join(', ');
+                desc += isZh ? ` ${ms}` : ` in ${ms}`;
+            }
+            if (r.bymonthday && r.bymonthday.length > 0) {
+                const ds = r.bymonthday.join(', ');
+                desc += isZh ? ` ${ds}日` : ` on day ${ds}`;
+            }
+            if (r.byweekday && r.byweekday.length > 0) {
+                const ws = r.byweekday.map(w => wdMap[w]).join(', ');
+                desc += isZh ? ` ${ws}` : ` on ${ws}`;
+            }
+            descParts.push(`${isZh ? '重复规则' : 'Rule'}: ${desc}`);
+        } else {
+            const unitLabel = T.unit[item.cycleUnit] || item.cycleUnit;
+            descParts.push(`${T.lblCycle}: ${item.intervalDays}${unitLabel}`);
+        }
         descParts.push(`${T.lblLast}: ${item.lastRenewDate}`);
         if (item.message) {
             descParts.push(`${T.note}: ${formatIcsText(item.message)}`);
@@ -1723,9 +1861,10 @@ app.get("/api/calendar.ics", async (req, env, url) => {
         // 使用 \n 连接各行，并作为 DESCRIPTION 的值
         parts.push(`DESCRIPTION:${descParts.join("\\n")}`);
 
-        // 使用 notifyTime 在当天提醒
-        const nTime = item.notifyTime || "08:00";
-        const [nH, nM] = nTime.split(":").map(Number);
+        // 使用 notifyTime 在当天提醒（取第一个时间）
+        const firstNT = Array.isArray(item.notifyTimes) && item.notifyTimes.length > 0
+            ? item.notifyTimes[0] : (item.notifyTime || "08:00");
+        const [nH, nM] = String(firstNT).split(":").map(Number);
 
         // 构造 ISO8601 持续时间字符串 (PTnHnM)
         // 全天事件从 00:00 开始，PT8H 即代表当天 08:00

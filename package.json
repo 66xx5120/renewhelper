@@ -1,6 +1,6 @@
 {
   "name": "renewhelper",
-  "version": "3.3.26",
+  "version": "3.6.16",
   "description": "A serverless service lifecycle manager on Cloudflare Workers",
   "main": "_worker.js",
   "keywords": [

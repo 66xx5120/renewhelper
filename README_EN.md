@@ -22,7 +22,7 @@
   - Supports automatic calculation based on Day, Month, or Year intervals.
   - Two modes: "Cycle Subscription" (Repeating) and "Expiration Reset" (Manual extension).
 - **🔔 Multi-Channel Notifications**:
-  - Built-in support for **Telegram, Bark, PushPlus, ServerChan3, DingTalk, NotifyX, Resend (Email), Gotify, Ntfy, Webhook**.
+  - Built-in support for **Telegram, Bark, PushPlus, ServerChan3, DingTalk, Lark (Feishu), WeCom, NotifyX, Resend (Email), Gotify, Ntfy, Webhook**.
   - Allows adding **unlimited** notification channels, supporting different channels for each project. Supports **batch management** and **quick assignment**.
   - Support customizable push titles, advance notice days, and daily push times.
 - **💰 Billing & Spending Dashboard** (New v2.0+):
@@ -34,7 +34,9 @@
   - **Auto-Renew**: Automatically updates the next due date upon expiration.
   - **Auto-Disable**: Automatically marks services as disabled if they are overdue for too long.
   - **Cron Triggers**: Supports daily scheduled checks via Cloudflare Cron Triggers.
-- **📆 ICS Calendar Subscription**: Generates standard `.ics` subscription links. Seamlessly integrates with iOS Calendar, Google Calendar, or Outlook, supporting timezone-aware precise reminders synchronized to your phone.
+- **📆 Calendar View & ICS Subscription**: 
+  - Features an intuitive **built-in visual calendar** to display current renewals and predict future pending items.
+  - Generates standard `.ics` subscription links. Seamlessly integrates with iOS Calendar, Google Calendar, or Outlook, supporting timezone-aware precise reminders synchronized to your phone.
 - **🛡️ Secure & Reliable**:
   - JWT authentication with automatic high-strength key generation.
   - Hybrid rate-limiting strategy (Memory + KV) to prevent brute-force attacks.
@@ -42,7 +44,8 @@
   - Sensitive operations (Delete, Reset) require secondary confirmation.
 - **🎨 Modern UI**:
   - Single-file frontend built with Vue 3 + Element Plus.
-  - Dark/Light mode support.
+  - Dark/Light mode support with smooth view transition animations.
+  - Convenient list multi-selection and batch operations (batch delete, pause/enable, assign notifications).
   - Fully responsive design for mobile and desktop.
   - Bilingual interface (English/Chinese).
   - Data Import/Export for backup.
@@ -299,6 +302,8 @@ In the "Settings" -> "Notifications" section, click the **Add Channel** button, 
 | **PushPlus**       | **Token**: User Token                                                       | 1. Visit [PushPlus Official Site](https://www.pushplus.plus/).<br>2. Login via WeChat to get your Token.                                                                                                                                                 |
 | **NotifyX**        | **API Key**: Key                                                            | 1. Visit [NotifyX Official Site](https://www.notifyx.cn/).<br>2. Login to get your API Key.                                                                                                                                                              |
 | **Resend** (Email) | **API Key**: Resend Key<br>**From**: Sender Email<br>**To**: Receiver Email | 1. Register at [Resend](https://resend.com/).<br>2. Bind a domain and get an API Key.<br>3. `From` must be a verified domain email (e.g., `alert@yourdomain.com`). If you don't have one, use `onboarding@resend.dev` and send to your registered email. |
+| **Lark** (Feishu)  | **Token**: The UUID from the Webhook URL<br>**Secret**: (Optional) Security sign secret | 1. Lark Group Settings -> Bots -> Add Bot -> Custom Bot.<br>2. Extract the UUID at the end of the Webhook URL (e.g., `xxxxxxxx-xxxx-...`) as Token.<br>3. Fill in Secret if enabled.                                                                                      |
+| **WeCom**          | **Key**: The key parameter from the Webhook URL                                  | 1. WeCom Group Settings -> Add Group Robot.<br>2. Extract the string value after `key=` in the Webhook URL (e.g., `693xxxx...`).                                                                                                                                           |
 | **Gotify**         | **Server**: URL<br>**Token**: App Token                                     | Self-hosted Gotify server. Create an Application to get the Token.                                                                                                                                                                                                       |
 | **Ntfy**           | **Server**: URL (Def: ntfy.sh)<br>**Topic**: Topic<br>**Token**: Token      | 1. **Server**: Leave empty for default `https://ntfy.sh`.<br>2. **Topic**: The topic name you subscribed to.<br>3. **Token**: (Optional) Required if your topic is protected.                                                                                          |
 | **ServerChan3**    | **UID**: User ID<br>**SendKey**: Send Key                                   | 1. Login to [ServerChan3](https://sc3.ftqq.com/).<br>2. Get UID and SendKey.                                                                                                                                                                                                                                             |
@@ -316,10 +321,15 @@ In the "Settings" -> "Notifications" section, click the **Add Channel** button, 
 - **Mode**:
   - 📅 **Cycle Subscription**: For items that expire every fixed cycle (e.g., 1 Month / 1 Year). Good for monthly subs, VPS renewals.
   - ⏳ **Expiration Reset**: For items that need manual/auto handling upon expiration to extend validity. Good for eSIM validity extension (e.g., extend 180 days on top-up).
+  - 🔁 **Repeat (Fixed Schedule)**: Built on a powerful RRULE engine. Suitable for recurring events based on natural habits like "the second Friday of every month" or "every two weeks on Wednesday and Sunday." Fully compatible with standard ICS calendar formats.
 - **Lunar Cycle**: Enable this for calculations based on the Lunar calendar (Birthdays, traditional events).
+- **Advance Notice**: Freely choose how many days in advance to receive notifications; supports **multiple selections** (e.g., selecting both "on the day" and "3 days in advance").
 - **Automation Policy**:
   - **Auto-Renew**: Automatically extends the next due date by one cycle upon expiration.
   - **Auto-Disable**: Automatically marks the service as disabled if it remains overdue for a specified number of days.
+
+### Batch Operations
+In the project list view, you can check the checkboxes on the left side of the list to perform **batch deletion**, **batch pause/enable**, and the highly practical **batch assign notification channels** function (quickly bind the same push channels to a group of services).
 
 <div align="center">
   <img src="./assets/AddUI_darkEN_shot.png" alt="RenewHelper 界面预览" width="600">
@@ -329,9 +339,10 @@ In the "Settings" -> "Notifications" section, click the **Add Channel** button, 
 
 Click the **LOGS** button on the main interface to view history of automation tasks, push results, and operation audits.
 
-### ICS Calendar Subscription
+### ICS Calendar Subscription & Calendar View
 
-Find the **Calendar Subscription** section in "Settings".
+On the main interface, you can click on the top right to switch to the **Calendar Visual View** (which not only intuitively displays the renewal events of the current month but also features a top switch to display future predicted pending items).
+In addition, you can obtain the **Calendar Subscription** link in the "Settings" menu:
 
 1.  Copy the subscription link.
 2.  **iOS**: Settings -> Mail -> Accounts -> Add Account -> Other -> Add Subscribed Calendar.
