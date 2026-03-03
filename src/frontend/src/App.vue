@@ -2919,8 +2919,8 @@ const openLink = (url) => { if (url) window.open(url, '_blank'); };
                     </div>
                     <div class="mecha-panel p-1 !border-l-0">
                         <!-- 批量操作控制栏 -->
-                        <div v-if="selectedListItems.length > 0" class="flex flex-wrap items-center justify-between bg-blue-50 dark:bg-slate-800 p-3 border-b border-blue-100 dark:border-slate-700">
-                            <div class="flex items-center gap-2">
+                        <div v-if="selectedListItems.length > 0" class="flex flex-wrap sm:flex-nowrap items-center justify-between bg-blue-50 dark:bg-slate-800 p-3 border-b border-blue-100 dark:border-slate-700 gap-y-3">
+                            <div class="flex flex-wrap items-center gap-2 w-full sm:w-auto">
                                 <span class="text-sm font-bold text-blue-600 mr-2 flex items-center">
                                     <el-icon class="mr-1"><Checked /></el-icon>
                                     {{ lang === 'zh' ? `已选择 ${selectedListItems.length} 项:` : `Selected ${selectedListItems.length}:` }}
@@ -4868,7 +4868,7 @@ const openLink = (url) => { if (url) window.open(url, '_blank'); };
                 </div>
             </el-dialog>
             <!-- Batch Assign Dialog -->
-            <el-dialog v-model="assignDialogVisible" :title="lang === 'zh' ? '批量分配渠道' : 'Batch Assign Channels'" width="500px" align-center class="mecha-panel">
+            <el-dialog v-model="assignDialogVisible" :title="lang === 'zh' ? '批量分配渠道' : 'Batch Assign Channels'" width="95%" style="max-width: 500px;" align-center class="mecha-panel">
                 <el-form :model="assignForm" label-position="top">
                     <el-form-item :label="lang === 'zh' ? '选择目标服务' : 'Target Services'">
                         <el-select v-model="assignForm.serviceIds" multiple filterable clearable collapse-tags :max-collapse-tags="3" collapse-tags-tooltip style="width:100%" :placeholder="lang === 'zh' ? '搜索并选择服务...' : 'Search & select services...'">
@@ -4895,7 +4895,7 @@ const openLink = (url) => { if (url) window.open(url, '_blank'); };
             </el-dialog>
 
             <!-- 批量分配列表通知渠道的弹窗 -->
-            <el-dialog v-model="listBatchAssignDialogVisible" :title="lang === 'zh' ? '批量分配通知渠道' : 'Batch Assign Channels'" width="680px" align-center class="!rounded-none mecha-panel" style="clip-path:polygon(10px 0,100% 0,100% calc(100% - 10px),calc(100% - 10px) 100%,0 100%,0 10px);">
+            <el-dialog v-model="listBatchAssignDialogVisible" :title="lang === 'zh' ? '批量分配通知渠道' : 'Batch Assign Channels'" width="95%" align-center class="!rounded-none mecha-panel" style="max-width: 680px; clip-path:polygon(10px 0,100% 0,100% calc(100% - 10px),calc(100% - 10px) 100%,0 100%,0 10px);">
                 <div class="mb-4">
                     <div class="text-xs font-bold text-gray-500 mb-2">{{ lang === 'zh' ? '分配策略' : 'Strategy' }}</div>
                     <el-radio-group v-model="listBatchAssignForm.strategy">

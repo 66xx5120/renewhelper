@@ -966,7 +966,7 @@ function calculateStatus(item, timezone = "UTC") {
 
     const hasHistory = Array.isArray(item.renewHistory) && item.renewHistory.length > 0 && item.renewHistory[0].endDate;
 
-    if (item.repeat && item.repeat.freq) {
+    if (item.type === 'repeat' && item.repeat && item.repeat.freq) {
         // ============================================================
         // 1. 对于固定自然重复 (Repeat) 服务，严格遵循 RRULE 推算算法引擎
         // ============================================================
@@ -1227,7 +1227,7 @@ async function checkAndRenew(env, isSched, lang = "zh") {
             const unit = it.cycleUnit || 'day';
             const sDate = Calc.parseYMD(startStr);
 
-            if (it.repeat && it.repeat.freq) {
+            if (it.type === 'repeat' && it.repeat && it.repeat.freq) {
                 // Repeat 类型特有逻辑: 结合基准日期直接向前推算下一次发生日
                 const nextD = Calc.calcNextRepeatDate(it.repeat, startStr, it.createDate);
                 endStr = Calc.toYMD(nextD);
